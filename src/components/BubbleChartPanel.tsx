@@ -80,7 +80,8 @@ export const BubbleChartPanel: React.FC<Props> = ({options, data, id, width, hei
           formattedFields.push({
             name: serieFrame.name || valueField.name,
             aliases: aliases,
-            value: result.text
+            value: result.text,
+            labels: valueField.labels ? {...valueField.labels} : undefined,
           });
         }
         return formattedFields[0];
@@ -104,6 +105,9 @@ export const BubbleChartPanel: React.FC<Props> = ({options, data, id, width, hei
 
       if(aliases.length === 1) {
         group.value = Number(record.value);
+        if (record.labels) {
+          group.labels = record.labels;
+        }
       }
 
       aliases.shift();

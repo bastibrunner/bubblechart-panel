@@ -66,6 +66,9 @@ To handle non-time series formatted data, first, convert it to a multiple series
         * Thresholds - Threshold values.
         * Colors - The start and end range of colors for the gradient scale.
     * Unique - In the unique scheme, different colors are applied to individual circles.
+    * Label - In the label scheme, circles are colored based on a series label value.
+        * Color by label - The label key whose values determine the color.
+        * Detected values / Custom mappings - Assign specific colors to label values; unmapped values use an automatic palette.
 
 ### Compatibility
 Tested against the following databases:

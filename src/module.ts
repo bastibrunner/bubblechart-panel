@@ -129,7 +129,9 @@ export const plugin = new PanelPlugin < BubbleChartOptions, FieldConfig> (Bubble
           thresholds: '20,50',
           gradientThresholds: '20,50',
           thresholdColors: ['#73bf69', '#FAD22A', '#f2495c'],
-          gradientColors: ['#73bf69', '#f2495c']
+          gradientColors: ['#73bf69', '#f2495c'],
+          colorLabel: '',
+          labelColorMappings: [],
         },
         category: ['Color scheme'],
       })

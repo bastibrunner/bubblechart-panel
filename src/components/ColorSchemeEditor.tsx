@@ -1,8 +1,9 @@
 import {css} from '@emotion/css';
-import React from 'react';
-import {GrafanaTheme2, StandardEditorProps} from '@grafana/data';
-import {Field, ColorPicker, RadioButtonGroup, useStyles2, Input, Button, Alert} from '@grafana/ui';
-import {ColorSchemeOptions, ColorSchemeParams} from 'types';
+import React, {useMemo} from 'react';
+import {FieldType, GrafanaTheme2, SelectableValue, StandardEditorProps} from '@grafana/data';
+import {Field, ColorPicker, RadioButtonGroup, useStyles2, Input, Button, Alert, Select} from '@grafana/ui';
+import {ColorSchemeOptions, ColorSchemeParams, LabelColorMapping} from 'types';
+import * as chromatic from 'd3-scale-chromatic';
 
 export interface ColorSchemeEditorSettings {}
 interface Props extends StandardEditorProps<string | string[] | null, ColorSchemeEditorSettings> {}
@@ -22,6 +23,80 @@ export const ColorSchemeEditor: React.FC<Props> = ({context, onChange}) => {
     onChange({
       ...context.options.colorSchemeParams, 
       thresholdColors: [...config.thresholdColors].reverse()});
+  };
+
+  const labelKeyOptions: Array<SelectableValue<string>> = useMemo(() => {
+    const keys = new Set<string>();
+    if (context?.data) {
+      for (const frame of context.data) {
+        for (const field of frame.fields) {
+          if (field.type !== FieldType.number || !field.labels) {
+            continue;
+          }
+          for (const key of Object.keys(field.labels)) {
+            keys.add(key);
+          }
+        }
+      }
+    }
+    return Array.from(keys).sort().map((key) => ({value: key, label: key}));
+  }, [context?.data]);
+
+  const uniqueLabelValues = useMemo(() => {
+    const colorLabel = config.colorLabel;
+    if (!colorLabel || !context?.data) {
+      return [] as string[];
+    }
+    const values = new Set<string>();
+    for (const frame of context.data) {
+      for (const field of frame.fields) {
+        if (field.type !== FieldType.number || !field.labels) {
+          continue;
+        }
+        const labelValue = field.labels[colorLabel];
+        if (labelValue !== undefined && labelValue !== '') {
+          values.add(labelValue);
+        }
+      }
+    }
+    return Array.from(values).sort();
+  }, [config.colorLabel, context?.data]);
+
+  const getMappedColor = (value: string, index: number): string => {
+    const mapping = (config.labelColorMappings || []).find((m) => m.value === value);
+    if (mapping) {
+      return mapping.color;
+    }
+    const palette = chromatic.schemeCategory10;
+    return palette[index % palette.length];
+  };
+
+  const setLabelColor = (value: string, color: string) => {
+    const existing = config.labelColorMappings || [];
+    const next: LabelColorMapping[] = existing.filter((m) => m.value !== value);
+    next.push({value, color});
+    onFieldChange('labelColorMappings', next);
+  };
+
+  const addLabelMapping = () => {
+    const existing = config.labelColorMappings || [];
+    const palette = chromatic.schemeCategory10;
+    onFieldChange('labelColorMappings', [
+      ...existing,
+      {value: '', color: palette[existing.length % palette.length]},
+    ]);
+  };
+
+  const updateLabelMapping = (index: number, patch: Partial<LabelColorMapping>) => {
+    const existing = [...(config.labelColorMappings || [])];
+    existing[index] = {...existing[index], ...patch};
+    onFieldChange('labelColorMappings', existing);
+  };
+
+  const removeLabelMapping = (index: number) => {
+    const existing = [...(config.labelColorMappings || [])];
+    existing.splice(index, 1);
+    onFieldChange('labelColorMappings', existing);
   };
 
   return (
@@ -45,7 +120,11 @@ export const ColorSchemeEditor: React.FC<Props> = ({context, onChange}) => {
             {
               value: ColorSchemeOptions.Unique,
               label: 'Unique',
-            }
+            },
+            {
+              value: ColorSchemeOptions.Label,
+              label: 'Label',
+            },
           ]}
           value={config.colorScheme}
           onChange={(val) => onFieldChange('colorScheme', val)}
@@ -144,6 +223,66 @@ export const ColorSchemeEditor: React.FC<Props> = ({context, onChange}) => {
           <Alert title="" severity="info">Apply unique color to circles, distinguishing them based on specific characteristics. This scheme allows for clear differentiation and categorization of circles, making it easy to interpret the data.</Alert>
         </>
       )}
+      {(config.colorScheme === ColorSchemeOptions.Label) && (
+        <>
+          <Alert title="" severity="info">Color circles based on a series label. Choose a label key, then assign colors to its values. Unmapped values receive an automatic palette color.</Alert>
+          <Field label="Color by label" description="Select which series label determines the circle color">
+            <Select
+              options={labelKeyOptions}
+              value={config.colorLabel || null}
+              onChange={(option) => onFieldChange('colorLabel', option?.value || '')}
+              placeholder="Select a label"
+              isClearable
+              allowCustomValue
+            />
+          </Field>
+          {uniqueLabelValues.length > 0 && (
+            <Field label="Detected values" description="Colors for label values found in the current data">
+              <div className={styles.mappingList}>
+                {uniqueLabelValues.map((value, index) => (
+                  <div key={value} className={styles.mappingRow}>
+                    <span className={styles.mappingValue}>{value}</span>
+                    <div className={styles.picker}>
+                      <ColorPicker
+                        color={getMappedColor(value, index)}
+                        onChange={(color) => setLabelColor(value, color)}
+                        enableNamedColors={false}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Field>
+          )}
+          <Field label="Custom mappings" description="Add or override colors for specific label values (useful when values are not yet in the query result)">
+            <div className={styles.mappingList}>
+              {(config.labelColorMappings || []).map((mapping, index) => (
+                <div key={index} className={styles.mappingRow}>
+                  <Input
+                    type="text"
+                    placeholder="Label value"
+                    value={mapping.value}
+                    onChange={(event) => updateLabelMapping(index, {value: event.currentTarget.value})}
+                  />
+                  <div className={styles.picker}>
+                    <ColorPicker
+                      color={mapping.color}
+                      onChange={(color) => updateLabelMapping(index, {color})}
+                      enableNamedColors={false}
+                    />
+                  </div>
+                  <Button size="sm" variant="secondary" onClick={() => removeLabelMapping(index)}>
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              <Button size="sm" variant="secondary" onClick={addLabelMapping}>
+                Add mapping
+              </Button>
+            </div>
+          </Field>
+        </>
+      )}
     </>
   );
 };
@@ -169,5 +308,26 @@ const getStyles = (theme: GrafanaTheme2) => ({
     align-items: center;
     justify-content: center;
     align-content: flex-end;
+    flex-shrink: 0;
+  `,
+  mappingList: css`
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  `,
+  mappingRow: css`
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  `,
+  mappingValue: css`
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   `,
 });

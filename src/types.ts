@@ -26,6 +26,11 @@ export interface BubbleChartOptions extends PanelProps, common.OptionsWithToolti
   textanchor: string;
 }
 
+export type LabelColorMapping = {
+  value: string;
+  color: string;
+};
+
 export type ColorSchemeParams = {
   colorScheme: ColorSchemeOptions;
   groupDepthColors: [string, string];
@@ -33,6 +38,10 @@ export type ColorSchemeParams = {
   gradientThresholds: string;
   thresholdColors: [string, string, string];
   gradientColors: [string, string];
+  /** Label key used when colorScheme is Label */
+  colorLabel?: string;
+  /** Explicit color overrides for label values */
+  labelColorMappings?: LabelColorMapping[];
 }
 
 export interface BubbleChartProps {
@@ -46,12 +55,14 @@ export type ParsedSeriesRecord = {
   name: string;
   aliases: string[];
   value: number | string;
+  labels?: Record<string, string>;
 }
 
 export type TreeRecord = {
   name: string;
   children?: TreeRecord[];
   value?: number;
+  labels?: Record<string, string>;
 }
 
 export interface Node {
@@ -80,7 +91,8 @@ export enum ColorSchemeOptions {
   Group = 'Group',
   Threshold = 'Threshold',
   Gradient = 'Gradient',
-  Unique = 'Unique'
+  Unique = 'Unique',
+  Label = 'Label',
 }
 
 export enum StatOptions {

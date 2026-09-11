@@ -14,6 +14,9 @@
     * Fixes [Not working on Grafana > 6.6](https://github.com/digrich/bubblechart-panel/issues/9)
     * Fixes [Examples on a working Bubble Chart](https://github.com/digrich/bubblechart-panel/issues/10)
 
+## v2.1.0
+    * Added Label color scheme: color circles by series label values with optional custom mappings.
+
 ## v2.0.1
     * Migrated to react from the agular version.
     * Comptaible with Grafana 10+

@@ -36,6 +36,8 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt}) => 
           ? opt.colorSchemeParams?.gradientColors : ['red', 'green'],
         groupDepthColors: (opt.colorSchemeParams?.groupDepthColors ?? []).length > 0
           ? opt.colorSchemeParams?.groupDepthColors : ["hsl(152,80%,80%)", "hsl(228,30%,40%)"],
+        colorLabel: opt.colorSchemeParams?.colorLabel?.trim() || '',
+        labelColorMappings: opt.colorSchemeParams?.labelColorMappings || [],
 
         unit: opt.unit?.trim() || 'short',
         decimals: opt.decimals,
@@ -68,6 +70,12 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt}) => 
 
       const colorPalette = chromatic.schemeCategory10;
       const uniqueColor = d3.scaleOrdinal().range(colorPalette);
+      const labelColor = d3.scaleOrdinal<string, string>().range(colorPalette);
+      const labelColorMap = new Map<string, string>(
+        (mergedOpt.labelColorMappings || [])
+          .filter((m: {value: string; color: string}) => m.value !== '')
+          .map((m: {value: string; color: string}) => [m.value, m.color])
+      );
 
       const pack = d3.pack()
         .size([diameter - margin, diameter - margin])
@@ -160,6 +168,19 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt}) => 
         } else if(mergedOpt.colorScheme === 'Unique') {
           let color: string = d.children ? bgColor : uniqueColor(String(d.value)) as string;
           return color;
+        } else if(mergedOpt.colorScheme === 'Label') {
+          if (d.children) {
+            return bgColor;
+          }
+          const labelKey = mergedOpt.colorLabel;
+          const labelValue = labelKey && d.data.labels
+            ? d.data.labels[labelKey]
+            : d.data.name;
+          const key = labelValue ?? d.data.name ?? '';
+          if (labelColorMap.has(key)) {
+            return labelColorMap.get(key)!;
+          }
+          return labelColor(key);
         }
         return 'green';
       }

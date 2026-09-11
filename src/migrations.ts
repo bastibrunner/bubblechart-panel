@@ -79,6 +79,8 @@ export const migrateDefaults = (angular: AngularBubbleChartOptions): Partial<Bub
     gradientThresholds: '50,80',
     thresholdColors: ["green", "yellow", "red"],
     gradientColors: ['red', 'green'],
+    colorLabel: '',
+    labelColorMappings: [],
   };
   let options: Partial<BubbleChartOptions> = {
     displayLabels: Array<BubbleChartLabels>(0),
