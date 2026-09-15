@@ -38,6 +38,8 @@ This panel provides two options for grouping circles: 'Name' and 'Label.' When s
 
 Alternatively, when the 'Label' option is selected, use the dropdown menu to select labels and customize the grouping order. This flexibility is particularly useful when dealing with series that do not have a name or alias defined properly, providing better control over circle organization on the chart.
 
+With Label grouping, you can override each level's display name using templates such as `{{label1}} static_string {{label2}}`. Tokens resolve to labels that have a unique value within that group's dataset (shared by every series under the circle). Empty overrides keep the raw group label value.
+
 To handle non-time series formatted data, first, convert it to a multiple series format using Grafana's 'Partition by values' transformation. In the chart options, select the 'Group by' option as 'Label' and choose appropriate labels; it will parse the data properly.
 
 ## Options
@@ -51,6 +53,7 @@ To handle non-time series formatted data, first, convert it to a multiple series
 * Unit - Unit to be displayed.
 * Decimals - Number of decimals to be displayed.
 * Group Separator - Tag values separator in Alias for grouping.
+* Display name overrides - (Label grouping) Per group-by level templates using `{{label}}` for unique values in that group.
 
 
 ### Color scheme

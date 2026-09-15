@@ -4,6 +4,7 @@ import {BubbleChartPanel} from 'components/BubbleChartPanel';
 import {FieldConfig} from '@grafana/schema';
 import './bubble-panel.css';
 import {ColorSchemeEditor} from 'components/ColorSchemeEditor';
+import {GroupDisplayNameOverridesEditor} from 'components/GroupDisplayNameOverridesEditor';
 import {BubbleChartPanelMigrationHandler} from 'migrations';
 import {
   DEFAULT_GROUP_REMAINDER_TO_OTHERS,
@@ -122,6 +123,18 @@ export const plugin = new PanelPlugin < BubbleChartOptions, FieldConfig> (Bubble
         defaultValue: ',',
         showIf(currentOptions, data) {
           return currentOptions.groupBy === "Name";
+        },
+      })
+      .addCustomEditor({
+        id: 'groupDisplayNameOverrides',
+        path: 'groupDisplayNameOverrides',
+        name: 'Display name overrides',
+        description:
+          'Override the display name for each group-by level. Use {{label}} placeholders for labels that have a unique value within that group (same style as series name overrides).',
+        editor: GroupDisplayNameOverridesEditor,
+        defaultValue: {},
+        showIf(currentOptions) {
+          return currentOptions.groupBy === 'Label';
         },
       })
       .addMultiSelect({

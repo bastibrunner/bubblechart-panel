@@ -3,6 +3,7 @@ import {
   findLeavesMatchingHighlightLabels,
   HighlightableLeaf,
   sharesHighlightLabelValues,
+  toHighlightableLeaf,
 } from './highlightByLabels';
 
 describe('sharesHighlightLabelValues', () => {
@@ -85,5 +86,16 @@ describe('buildHighlightTooltipHtml', () => {
     expect(html).toContain('20');
     expect(html).toContain('background:#111');
     expect(html).toContain('background:#222');
+  });
+});
+
+describe('toHighlightableLeaf', () => {
+  it('prefers displayName over name', () => {
+    expect(
+      toHighlightableLeaf(
+        {data: {name: 'foo', displayName: 'Label1 foo with same', value: 1}},
+        'red'
+      ).name
+    ).toBe('Label1 foo with same');
   });
 });

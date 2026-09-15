@@ -70,6 +70,7 @@ describe('processBubbleData', () => {
     groupBy: 'Name',
     groupLabels: [] as string[],
     groupSeparator: ',',
+    groupDisplayNameOverrides: {},
     maxNodes: DEFAULT_MAX_NODES,
     groupRemainderToOthers: false,
     othersAggregate: OthersAggregate.Sum,

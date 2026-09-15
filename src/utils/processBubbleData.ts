@@ -19,6 +19,7 @@ import {
   OTHERS_NODE_NAME,
   PARSE_REFUSE_THRESHOLD,
 } from '../constants';
+import {applyGroupDisplayNames} from './displayNameTemplate';
 
 function resolveReducerId(stat: StatOptions | string): ReducerID {
   switch (stat) {
@@ -219,6 +220,7 @@ export function processBubbleData(
     | 'groupBy'
     | 'groupLabels'
     | 'groupSeparator'
+    | 'groupDisplayNameOverrides'
     | 'maxNodes'
     | 'groupRemainderToOthers'
     | 'othersAggregate'
@@ -278,6 +280,10 @@ export function processBubbleData(
   }
 
   const tree = createTreeFromRecords(displayed);
+
+  if (options.groupBy === 'Label') {
+    applyGroupDisplayNames(tree, options.groupLabels, options.groupDisplayNameOverrides);
+  }
 
   return {
     tree,

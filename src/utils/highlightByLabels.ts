@@ -1,4 +1,5 @@
 import {TreeRecord} from 'types';
+import {getNodeDisplayName} from './displayNameTemplate';
 
 /**
  * Returns true when `candidate` shares the same value as `reference` for every
@@ -87,7 +88,7 @@ export function toHighlightableLeaf(
   color: string
 ): HighlightableLeaf {
   return {
-    name: d.data.name,
+    name: getNodeDisplayName(d.data),
     value: d.data.value,
     labels: d.data.labels,
     color,

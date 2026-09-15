@@ -18,6 +18,7 @@ import {
   sharesHighlightLabelValues,
   toHighlightableLeaf,
 } from '../utils/highlightByLabels';
+import {getNodeDisplayName} from '../utils/displayNameTemplate';
 
 type MergedOpt = {
   textfont: string;
@@ -242,7 +243,7 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt, node
         ? toolTipCell + ''
         : toolTipCell +
             '  <strong>' +
-            d.data.name +
+            getNodeDisplayName(d.data) +
             (!d.children || d.children.length === 0
               ? '</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' +
                 formatValue(d.data.value) +
@@ -292,7 +293,7 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt, node
       const hasName = mergedOpt.bubbleChartLabels.includes(BubbleChartLabels.Name);
       const hasValue = mergedOpt.bubbleChartLabels.includes(BubbleChartLabels.Value);
       if (hasName) {
-        textContent += d.data.name;
+        textContent += getNodeDisplayName(d.data);
       }
       if (hasName && hasValue) {
         textContent += ':  ';
@@ -321,7 +322,8 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt, node
           .style('font-size', (d: d3.HierarchyCircularNode<TreeRecord>) => estimateFontSize(d, k, root) + 'px')
           .style('display', (d: d3.HierarchyCircularNode<TreeRecord>) => {
             const fontPx = estimateFontSize(d, k, root);
-            const approxWidth = (d.data.name?.length || 1) * fontPx * 0.55;
+            const label = getNodeDisplayName(d.data);
+            const approxWidth = (label?.length || 1) * fontPx * 0.55;
             const maxTextWidth = d.r * k * 2;
             return approxWidth > maxTextWidth || d.r * k < mergedOpt.minBubbleRadiusForLabel
               ? 'none'
