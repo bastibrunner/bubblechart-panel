@@ -12,12 +12,19 @@ import {
   DEFAULT_MIN_BUBBLE_RADIUS_FOR_LABEL,
   RESIZE_DEBOUNCE_MS,
 } from '../constants';
+import {
+  buildHighlightTooltipHtml,
+  isLeafNode,
+  sharesHighlightLabelValues,
+  toHighlightableLeaf,
+} from '../utils/highlightByLabels';
 
 type MergedOpt = {
   textfont: string;
   textanchor: string;
   textshadow: string;
   bubbleChartLabels: BubbleChartLabels[];
+  highlightLabels: string[];
   colorScheme: string;
   thresholds: number[];
   gradientThresholds: number[];
@@ -45,6 +52,7 @@ function buildMergedOpt(opt: BubbleChartProps['opt']): MergedOpt {
     textanchor: opt.textanchor?.trim() || 'middle',
     textshadow: opt.textshadow?.trim() || defaultShadow,
     bubbleChartLabels: opt.displayLabels || [],
+    highlightLabels: Array.isArray(opt.highlightLabels) ? opt.highlightLabels : [],
     colorScheme: opt.colorSchemeParams?.colorScheme?.trim() || 'Group',
     thresholds: parseThresholds(opt.colorSchemeParams?.thresholds?.trim() || '50,80'),
     gradientThresholds: parseThresholds(opt.colorSchemeParams?.gradientThresholds?.trim() || '0,100'),
@@ -242,6 +250,43 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt, node
               : '</strong>');
     }
 
+    function clearHighlight() {
+      if (!layoutRef.current?.circle) {
+        return;
+      }
+      layoutRef.current.circle
+        .classed('node--related', false)
+        .classed('node--dimmed', false);
+    }
+
+    function applyHighlight(hovered: d3.HierarchyCircularNode<TreeRecord>) {
+      const highlightLabels = mergedOpt.highlightLabels;
+      const circleSel = layoutRef.current?.circle;
+      if (!circleSel || !highlightLabels.length || !isLeafNode(hovered)) {
+        clearHighlight();
+        return [];
+      }
+
+      const related = new Set(
+        nodes.filter(
+          (n) =>
+            isLeafNode(n) &&
+            sharesHighlightLabelValues(hovered.data.labels, n.data.labels, highlightLabels)
+        )
+      );
+
+      if (!related.size) {
+        clearHighlight();
+        return [];
+      }
+
+      circleSel
+        .classed('node--related', (n) => related.has(n))
+        .classed('node--dimmed', (n) => !related.has(n));
+
+      return Array.from(related).map((n) => toHighlightableLeaf(n, getCircleColor(n)));
+    }
+
     function getText(d: d3.HierarchyCircularNode<TreeRecord>): string {
       let textContent = '';
       const hasName = mergedOpt.bubbleChartLabels.includes(BubbleChartLabels.Name);
@@ -324,8 +369,17 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt, node
           }
         })
         .on('mouseover', function (_event: MouseEvent, d) {
-          // Lazy tooltip HTML — only compute on hover.
-          d3.select(this).attr('data-tooltip-html', getTooltipText(d));
+          const matches = applyHighlight(d);
+          const tooltipHtml =
+            matches.length > 0
+              ? buildHighlightTooltipHtml(matches, (value) =>
+                  value === undefined ? '' : formatValue(value)
+                )
+              : getTooltipText(d);
+          d3.select(this).attr('data-tooltip-html', tooltipHtml);
+        })
+        .on('mouseout', () => {
+          clearHighlight();
         });
     }
 

@@ -3,6 +3,7 @@
     stroke: #555;
     stroke-width: 0.5px;
     outline: none;
+    transition: opacity 120ms ease-out, stroke-width 120ms ease-out;
 }
 
 .node:hover {
@@ -13,6 +14,16 @@
 .node--leaf {
     fill: white;
     pointer-events: all;
+}
+
+.node--related {
+    stroke: #000;
+    stroke-width: 2.5px;
+    opacity: 1;
+}
+
+.node--dimmed {
+    opacity: 0.2;
 }
 
 .label,

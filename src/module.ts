@@ -123,6 +123,36 @@ export const plugin = new PanelPlugin < BubbleChartOptions, FieldConfig> (Bubble
           return currentOptions.groupBy === "Name";
         },
       })
+      .addMultiSelect({
+        name: 'Highlight by labels',
+        path: 'highlightLabels',
+        description:
+          'Select labels whose shared values should be highlighted across groups. Hovering a bubble highlights every other bubble with the same values for all selected labels, and the tooltip lists their metrics.',
+        settings: {
+          allowCustomValue: true,
+          options: [],
+          getOptions: async (context: FieldOverrideContext) => {
+            const keys = new Set<string>();
+            if (context?.data) {
+              for (const frame of context.data) {
+                for (const field of frame.fields) {
+                  if (field.type !== FieldType.number || !field.labels) {
+                    continue;
+                  }
+                  for (const key of Object.keys(field.labels)) {
+                    keys.add(key);
+                  }
+                }
+              }
+            }
+            return Promise.resolve(
+              Array.from(keys)
+                .sort()
+                .map((key) => ({value: key, label: key}))
+            );
+          },
+        },
+      })
       .addNumberInput({
         path: 'maxNodes',
         name: 'Max nodes',

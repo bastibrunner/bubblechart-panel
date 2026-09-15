@@ -11,6 +11,11 @@ export interface BubbleChartOptions extends PanelProps, common.OptionsWithToolti
   displayLabels: BubbleChartLabels[];
   groupBy: string;
   groupLabels: string[];
+  /**
+   * Label keys used for cross-group hover highlighting. When set, hovering a leaf
+   * highlights every other leaf that shares the same values for all of these keys.
+   */
+  highlightLabels: string[];
   stat: StatOptions;
   unit: string;
   decimals: number;

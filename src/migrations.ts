@@ -86,6 +86,7 @@ export const migrateDefaults = (angular: AngularBubbleChartOptions): Partial<Bub
     displayLabels: Array<BubbleChartLabels>(0),
     groupBy: 'Name',
     groupLabels: [],
+    highlightLabels: [],
     stat: StatOptions.Current,
     unit: 'short',
     decimals: 2,
