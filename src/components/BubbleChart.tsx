@@ -21,7 +21,7 @@ import {
   toHighlightableLeaf,
 } from '../utils/highlightByLabels';
 import {getNodeDisplayName} from '../utils/displayNameTemplate';
-import {packFirstGroupInRows, packHierarchyCircle} from '../utils/rowGroupLayout';
+import {packFirstGroupInRows, packHierarchyCircle, overviewViewSize} from '../utils/rowGroupLayout';
 
 type MergedOpt = {
   textfont: string;
@@ -187,9 +187,24 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt, node
         .map((m) => [m.value, m.color])
     );
 
-    const {root, nodes} = mergedOpt.firstGroupInRow
+    const layoutResult = mergedOpt.firstGroupInRow
       ? packFirstGroupInRows(data, packWidth, packHeight, mergedOpt.maxGroupsPerRow)
       : packHierarchyCircle(data, Math.max(1, diameter - margin));
+    const {root, nodes} = layoutResult;
+
+    // Row layout: fit the content rectangle into the panel (not a circle diagonal).
+    let overviewExtent = root.r * 2 + margin;
+    if (mergedOpt.firstGroupInRow && layoutResult.contentSize) {
+      overviewExtent = overviewViewSize(
+        layoutResult.contentSize.width,
+        layoutResult.contentSize.height,
+        w,
+        h,
+        diameter,
+        margin
+      );
+      root.r = Math.max(0.5, (overviewExtent - margin) / 2);
+    }
 
     function getCircleColor(d: d3.HierarchyCircularNode<TreeRecord>): string {
       const newVal = Number(d.data.value);
@@ -451,7 +466,7 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt, node
       margin,
     };
     focusRef.current = root;
-    zoomTo([root.x, root.y, root.r * 2 + margin]);
+    zoomTo([root.x, root.y, overviewExtent]);
 
     return () => {
       layoutRef.current = null;

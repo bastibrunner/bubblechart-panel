@@ -4,6 +4,8 @@ import {TreeRecord} from '../types';
 export type PackLayoutResult = {
   root: HierarchyCircularNode<TreeRecord>;
   nodes: Array<HierarchyCircularNode<TreeRecord>>;
+  /** Axis-aligned content size in layout coords (row layout only). */
+  contentSize?: {width: number; height: number};
 };
 
 function buildHierarchy(data: TreeRecord): HierarchyNode<TreeRecord> {
@@ -29,9 +31,30 @@ export function packHierarchyCircle(
 }
 
 /**
- * Pack each first-level group independently and place them on a row/grid.
- * The synthetic root is sized to encompass all groups but is not a visual enclosure
- * for packing — callers typically omit drawing it.
+ * View extent (maps to zoom `v[2]`) that fits a content rectangle into the panel
+ * with isotropic scale, matching `k = diameter / viewSize` where diameter is the
+ * shorter panel side.
+ */
+export function overviewViewSize(
+  contentWidth: number,
+  contentHeight: number,
+  panelWidth: number,
+  panelHeight: number,
+  diameter: number,
+  margin: number
+): number {
+  const cw = Math.max(contentWidth, 1);
+  const ch = Math.max(contentHeight, 1);
+  const pw = Math.max(panelWidth, 1);
+  const ph = Math.max(panelHeight, 1);
+  // diameter / viewSize === min(pw/cw, ph/ch)
+  return diameter * Math.max(cw / pw, ch / ph) + margin;
+}
+
+/**
+ * Pack each first-level group independently and place them on a tight row/grid
+ * centered in the available area. The synthetic root is positioned at the content
+ * center; callers set overview zoom from contentSize (not root.r alone).
  */
 export function packFirstGroupInRows(
   data: TreeRecord,
@@ -50,9 +73,11 @@ export function packFirstGroupInRows(
 
   const cols = Math.max(1, Math.floor(maxGroupsPerRow) || 1);
   const nrows = Math.ceil(groups.length / cols);
-  const cellW = width / cols;
-  const cellH = height / nrows;
-  const cellSize = Math.max(1, Math.min(cellW, cellH) - gap);
+  // Equal square cells sized to fit the grid; do not stretch across empty panel space.
+  const cellSize = Math.max(1, Math.min(width / cols, height / nrows) - gap);
+  const stride = cellSize + gap;
+  const gridW = cols * stride - gap;
+  const gridH = nrows * stride - gap;
 
   let minX = Infinity;
   let maxX = -Infinity;
@@ -63,12 +88,11 @@ export function packFirstGroupInRows(
     const group = groups[i] as HierarchyCircularNode<TreeRecord>;
     const col = i % cols;
     const row = Math.floor(i / cols);
-    // Cell centers in a coordinate system with origin at panel center.
-    const cx = (col + 0.5) * cellW - width / 2;
-    const cy = (row + 0.5) * cellH - height / 2;
+    // Cell centers relative to grid center (panel origin).
+    const cx = (col + 0.5) * stride - gridW / 2;
+    const cy = (row + 0.5) * stride - gridH / 2;
 
     const packer = pack<TreeRecord>().size([cellSize, cellSize]).padding(padding);
-    // Pack this subtree as if it were its own root.
     const savedParent = group.parent;
     group.parent = null;
     packer(group);
@@ -87,11 +111,16 @@ export function packFirstGroupInRows(
     });
   }
 
-  // Overview root covering all group circles (for zoom-out).
+  const contentWidth = maxX - minX;
+  const contentHeight = maxY - minY;
   root.x = (minX + maxX) / 2;
   root.y = (minY + maxY) / 2;
-  // Half-diagonal of the axis-aligned bounds so corner groups are covered.
-  root.r = Math.hypot((maxX - minX) / 2, (maxY - minY) / 2);
+  // Placeholder; BubbleChart overwrites with aspect-aware overview radius.
+  root.r = Math.max(contentWidth, contentHeight) / 2;
 
-  return {root, nodes: root.descendants()};
+  return {
+    root,
+    nodes: root.descendants(),
+    contentSize: {width: contentWidth, height: contentHeight},
+  };
 }
