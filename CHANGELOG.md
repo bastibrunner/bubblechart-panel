@@ -14,6 +14,9 @@
     * Fixes [Not working on Grafana > 6.6](https://github.com/digrich/bubblechart-panel/issues/9)
     * Fixes [Examples on a working Bubble Chart](https://github.com/digrich/bubblechart-panel/issues/10)
 
+## v2.2.0
+    * Added "First group in row" layout: first-level groups can be arranged as separate root circles in a row/grid with configurable max groups per row.
+
 ## v2.1.0
     * Added Label color scheme: color circles by series label values with optional custom mappings.
 

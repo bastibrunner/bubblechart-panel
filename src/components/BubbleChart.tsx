@@ -8,7 +8,9 @@ import {} from 'd3-hierarchy';
 import * as chromatic from 'd3-scale-chromatic';
 import {config} from '@grafana/runtime';
 import {
+  DEFAULT_FIRST_GROUP_IN_ROW,
   DEFAULT_HIDE_LABELS_ABOVE,
+  DEFAULT_MAX_GROUPS_PER_ROW,
   DEFAULT_MIN_BUBBLE_RADIUS_FOR_LABEL,
   RESIZE_DEBOUNCE_MS,
 } from '../constants';
@@ -19,6 +21,7 @@ import {
   toHighlightableLeaf,
 } from '../utils/highlightByLabels';
 import {getNodeDisplayName} from '../utils/displayNameTemplate';
+import {packFirstGroupInRows, packHierarchyCircle} from '../utils/rowGroupLayout';
 
 type MergedOpt = {
   textfont: string;
@@ -39,6 +42,8 @@ type MergedOpt = {
   bgColor: string;
   hideLabelsAbove: number;
   minBubbleRadiusForLabel: number;
+  firstGroupInRow: boolean;
+  maxGroupsPerRow: number;
 };
 
 function parseThresholds(thresholds: string): number[] {
@@ -80,6 +85,11 @@ function buildMergedOpt(opt: BubbleChartProps['opt']): MergedOpt {
       typeof opt.minBubbleRadiusForLabel === 'number'
         ? opt.minBubbleRadiusForLabel
         : DEFAULT_MIN_BUBBLE_RADIUS_FOR_LABEL,
+    firstGroupInRow: opt.firstGroupInRow === true ? true : DEFAULT_FIRST_GROUP_IN_ROW,
+    maxGroupsPerRow:
+      typeof opt.maxGroupsPerRow === 'number' && opt.maxGroupsPerRow >= 1
+        ? Math.floor(opt.maxGroupsPerRow)
+        : DEFAULT_MAX_GROUPS_PER_ROW,
   };
 }
 
@@ -151,7 +161,10 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt, node
 
     const bgColor = mergedOpt.bgColor;
     const margin = 20;
-    const diameter = h;
+    const packWidth = Math.max(1, w - margin);
+    const packHeight = Math.max(1, h - margin);
+    // Zoom scale reference: map view extent into the shorter panel side (classic behavior).
+    const diameter = Math.min(w, h);
     const g = svgSelection.append('g').attr('transform', 'translate(' + w / 2 + ',' + h / 2 + ')');
 
     const groupDepthColor = d3
@@ -174,20 +187,9 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt, node
         .map((m) => [m.value, m.color])
     );
 
-    const pack = d3
-      .pack()
-      .size([diameter - margin, diameter - margin])
-      .padding(2);
-
-    const root: d3.HierarchyCircularNode<TreeRecord> = d3
-      .hierarchy(data)
-      .sum((d: TreeRecord) => d.value || 1)
-      .sort(
-        (a: d3.HierarchyNode<TreeRecord>, b: d3.HierarchyNode<TreeRecord>) =>
-          (b.data.value || 1) - (a.data.value || 1)
-      ) as d3.HierarchyCircularNode<TreeRecord>;
-
-    const nodes = (pack(root as d3.HierarchyNode<unknown>) as d3.HierarchyCircularNode<TreeRecord>).descendants();
+    const {root, nodes} = mergedOpt.firstGroupInRow
+      ? packFirstGroupInRows(data, packWidth, packHeight, mergedOpt.maxGroupsPerRow)
+      : packHierarchyCircle(data, Math.max(1, diameter - margin));
 
     function getCircleColor(d: d3.HierarchyCircularNode<TreeRecord>): string {
       const newVal = Number(d.data.value);
@@ -357,9 +359,16 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt, node
         .data(nodeList)
         .enter()
         .append('circle')
-        .attr('class', (d) =>
-          d.parent ? (d.children ? 'node' : 'node node--leaf') : 'node node--root'
-        )
+        .attr('class', (d) => {
+          if (!d.parent) {
+            return 'node node--root';
+          }
+          // In row layout, first-level groups act as independent root circles.
+          if (mergedOpt.firstGroupInRow && d.depth === 1) {
+            return d.children ? 'node node--root' : 'node node--leaf';
+          }
+          return d.children ? 'node' : 'node node--leaf';
+        })
         .style('fill', (d) => getCircleColor(d))
         .attr('id', (d) => d.name)
         .attr('r', (d) => (d.r && d.r > 0 ? d.r : 1))
@@ -415,14 +424,22 @@ const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt, node
         .style('font-size', (d) => estimateFontSize(d, 2, root) + 'px');
     }
 
-    const circle = createCircles(g, nodes);
-    const text = createTexts(g, nodes);
+    const drawableNodes = mergedOpt.firstGroupInRow ? nodes.filter((d) => d !== root) : nodes;
+    const circle = createCircles(g, drawableNodes);
+    const text = createTexts(g, drawableNodes);
     const node = g.selectAll('circle, text') as Selection<
       d3.BaseType,
       unknown,
       SVGGElement,
       undefined
     >;
+
+    // Background click zooms out to the overview (needed when the synthetic root is not drawn).
+    svgSelection.on('click', (event: MouseEvent) => {
+      if (focusRef.current !== root) {
+        zoom(root, event);
+      }
+    });
 
     layoutRef.current = {
       root,

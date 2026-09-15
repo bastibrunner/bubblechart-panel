@@ -26,6 +26,15 @@ export interface BubbleChartOptions extends PanelProps, common.OptionsWithToolti
   unit: string;
   decimals: number;
   groupSeparator: string;
+  /**
+   * When true, first-level groups are laid out in a row/grid of separate root
+   * circles instead of being packed inside a single outer circle.
+   */
+  firstGroupInRow: boolean;
+  /**
+   * Max number of first-level group circles on each row when firstGroupInRow is enabled.
+   */
+  maxGroupsPerRow: number;
   colorSchemeParams: ColorSchemeParams;
   text: string;
   showSeriesCount: boolean;

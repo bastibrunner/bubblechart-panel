@@ -92,6 +92,8 @@ export const migrateDefaults = (angular: AngularBubbleChartOptions): Partial<Bub
     unit: 'short',
     decimals: 2,
     groupSeparator: ',',
+    firstGroupInRow: false,
+    maxGroupsPerRow: 4,
     colorSchemeParams: colorSchemeParams,
     text: '',
     showSeriesCount: false,

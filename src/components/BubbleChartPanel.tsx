@@ -9,7 +9,10 @@ import {processBubbleData} from '../utils/processBubbleData';
 interface Props extends PanelProps<BubbleChartOptions> {}
 
 export const BubbleChartPanel: React.FC<Props> = ({options, data, width, height}) => {
-  const size = Math.min(width, height);
+  const firstGroupInRow = options.firstGroupInRow === true;
+  // Row layout needs the full panel rectangle; classic pack stays square.
+  const chartWidth = firstGroupInRow ? width : Math.min(width, height);
+  const chartHeight = firstGroupInRow ? height : Math.min(width, height);
   const {
     stat,
     unit,
@@ -94,8 +97,8 @@ export const BubbleChartPanel: React.FC<Props> = ({options, data, width, height}
       {warningBanner}
       <BubbleChart
         data={processed.tree}
-        width={size}
-        height={size}
+        width={chartWidth}
+        height={chartHeight}
         opt={options}
         nodeCount={processed.displayedLeafCount}
       />

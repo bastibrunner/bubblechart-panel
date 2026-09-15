@@ -40,6 +40,8 @@ Alternatively, when the 'Label' option is selected, use the dropdown menu to sel
 
 With Label grouping, you can override each level's display name using templates such as `{{label1}} static_string {{label2}}`. Tokens resolve to labels that have a unique value within that group's dataset (shared by every series under the circle). Empty overrides keep the raw group label value.
 
+Enable **First group in row** to lay out each first-level group (the first separator segment or the first selected label) as its own root circle in a row/grid, instead of packing them inside one outer circle. When enabled, **Max groups per row** controls how many of those circles appear on each line before wrapping.
+
 To handle non-time series formatted data, first, convert it to a multiple series format using Grafana's 'Partition by values' transformation. In the chart options, select the 'Group by' option as 'Label' and choose appropriate labels; it will parse the data properly.
 
 ## Options
@@ -54,6 +56,8 @@ To handle non-time series formatted data, first, convert it to a multiple series
 * Decimals - Number of decimals to be displayed.
 * Group Separator - Tag values separator in Alias for grouping.
 * Display name overrides - (Label grouping) Per group-by level templates using `{{label}}` for unique values in that group.
+* First group in row - Lay out each first-level group as its own root circle in a row/grid.
+* Max groups per row - (when First group in row is enabled) How many first-level group circles per line before wrapping.
 
 
 ### Color scheme

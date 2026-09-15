@@ -38,6 +38,12 @@ export const OTHERS_NODE_NAME = 'Others';
 /** Default: do not fold remainder into Others (drop overflow instead). */
 export const DEFAULT_GROUP_REMAINDER_TO_OTHERS = false;
 
+/** Default: pack all first-level groups inside one root circle. */
+export const DEFAULT_FIRST_GROUP_IN_ROW = false;
+
+/** Default columns per row when first-group-in-row layout is enabled. */
+export const DEFAULT_MAX_GROUPS_PER_ROW = 4;
+
 /**
  * Performance defaults summary (panel options under "Performance"):
  * - maxNodes (500): soft cap; keep largest leaves by absolute value when over limit.

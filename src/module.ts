@@ -7,8 +7,10 @@ import {ColorSchemeEditor} from 'components/ColorSchemeEditor';
 import {GroupDisplayNameOverridesEditor} from 'components/GroupDisplayNameOverridesEditor';
 import {BubbleChartPanelMigrationHandler} from 'migrations';
 import {
+  DEFAULT_FIRST_GROUP_IN_ROW,
   DEFAULT_GROUP_REMAINDER_TO_OTHERS,
   DEFAULT_HIDE_LABELS_ABOVE,
+  DEFAULT_MAX_GROUPS_PER_ROW,
   DEFAULT_MAX_NODES,
   DEFAULT_MIN_BUBBLE_RADIUS_FOR_LABEL,
   HARD_MAX_NODES,
@@ -135,6 +137,27 @@ export const plugin = new PanelPlugin < BubbleChartOptions, FieldConfig> (Bubble
         defaultValue: {},
         showIf(currentOptions) {
           return currentOptions.groupBy === 'Label';
+        },
+      })
+      .addBooleanSwitch({
+        path: 'firstGroupInRow',
+        name: 'First group in row',
+        description:
+          'Lay out each first-level group (first separator segment or first selected label) as its own root circle in a row/grid, instead of packing them all inside one outer circle.',
+        defaultValue: DEFAULT_FIRST_GROUP_IN_ROW,
+      })
+      .addNumberInput({
+        path: 'maxGroupsPerRow',
+        name: 'Max groups per row',
+        description:
+          'Maximum number of first-level group circles on each row before wrapping to the next line.',
+        defaultValue: DEFAULT_MAX_GROUPS_PER_ROW,
+        settings: {
+          min: 1,
+          integer: true,
+        },
+        showIf(currentOptions) {
+          return currentOptions.firstGroupInRow === true;
         },
       })
       .addMultiSelect({
