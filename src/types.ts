@@ -31,6 +31,13 @@ export interface BubbleChartOptions extends PanelProps, common.OptionsWithToolti
   textanchor: string;
   /** Soft cap on leaf bubbles rendered (effective max is min of this and HARD_MAX_NODES). */
   maxNodes: number;
+  /**
+   * When truncating to maxNodes, fold the dropped series into a single "Others" leaf
+   * instead of discarding them.
+   */
+  groupRemainderToOthers: boolean;
+  /** How to aggregate values of series folded into the Others leaf. */
+  othersAggregate: OthersAggregate;
   /** Hide all labels when total displayed node count exceeds this (0 = never auto-hide). */
   hideLabelsAbove: number;
   /** Minimum packed radius (before zoom scale) required to create a label text element. */
@@ -44,6 +51,8 @@ export type ProcessedBubbleData = {
   displayedLeafCount: number;
   truncated: boolean;
   blocked: boolean;
+  /** Number of original series folded into the Others leaf (0 when unused). */
+  othersCount: number;
 };
 
 export type LabelColorMapping = {
@@ -123,6 +132,15 @@ export enum StatOptions {
   Avg = 'avg',
   Total = 'total',
   Current = 'current'
+}
+
+/** Aggregation applied to series folded into the Others leaf. */
+export enum OthersAggregate {
+  Sum = 'sum',
+  Avg = 'avg',
+  Min = 'min',
+  Max = 'max',
+  Count = 'count',
 }
 
 export enum BubbleChartLabels {

@@ -32,9 +32,17 @@ export const DEFAULT_MIN_BUBBLE_RADIUS_FOR_LABEL = 8;
 /** Debounce delay (ms) for resize-driven chart updates. */
 export const RESIZE_DEBOUNCE_MS = 150;
 
+/** Display name for the synthetic leaf that holds truncated series. */
+export const OTHERS_NODE_NAME = 'Others';
+
+/** Default: do not fold remainder into Others (drop overflow instead). */
+export const DEFAULT_GROUP_REMAINDER_TO_OTHERS = false;
+
 /**
  * Performance defaults summary (panel options under "Performance"):
  * - maxNodes (500): soft cap; keep largest leaves by absolute value when over limit.
+ * - groupRemainderToOthers (false): when true, fold overflow into a single Others leaf.
+ * - othersAggregate (sum): sum | avg | min | max | count for the Others value.
  * - HARD_MAX_NODES (5000): absolute render ceiling applied to maxNodes.
  * - PARSE_REFUSE_THRESHOLD (50000): skip processing and show an error banner.
  * - hideLabelsAbove (200): auto-hide all labels when leaf count exceeds this (0 = off).

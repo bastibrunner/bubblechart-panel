@@ -2,18 +2,23 @@ import {
   DataFrame,
   Field,
   FieldType,
-  getValueFormat,
   reduceField,
   ReducerID,
 } from '@grafana/data';
 import {
   BubbleChartOptions,
+  OthersAggregate,
   ParsedSeriesRecord,
   ProcessedBubbleData,
   StatOptions,
   TreeRecord,
 } from 'types';
-import {DEFAULT_MAX_NODES, HARD_MAX_NODES, PARSE_REFUSE_THRESHOLD} from '../constants';
+import {
+  DEFAULT_MAX_NODES,
+  HARD_MAX_NODES,
+  OTHERS_NODE_NAME,
+  PARSE_REFUSE_THRESHOLD,
+} from '../constants';
 
 function resolveReducerId(stat: StatOptions | string): ReducerID {
   switch (stat) {
@@ -72,8 +77,8 @@ export function parseSeries(
       continue;
     }
 
+    // Store the raw numeric calc — formatting happens at render time.
     const operatorValue = getFieldCalcValue(valueField, reducerId);
-    const result = getValueFormat(options.unit)(operatorValue, 2, undefined, undefined);
 
     let aliases = [valueField.name];
     if (options.groupBy === 'Name') {
@@ -92,7 +97,7 @@ export function parseSeries(
     parsed.push({
       name: serieFrame.name || valueField.name,
       aliases,
-      value: result.text,
+      value: operatorValue,
       labels: valueField.labels ? {...valueField.labels} : undefined,
     });
   }
@@ -158,17 +163,65 @@ export function createTreeFromRecords(records: ParsedSeriesRecord[]): TreeRecord
 
 function numericValue(record: ParsedSeriesRecord): number {
   const n = Number(record.value);
-  return Number.isNaN(n) ? 0 : Math.abs(n);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+function absNumericValue(record: ParsedSeriesRecord): number {
+  return Math.abs(numericValue(record));
+}
+
+export function aggregateOthersValue(
+  remainder: ParsedSeriesRecord[],
+  aggregate: OthersAggregate | string | undefined
+): number {
+  if (remainder.length === 0) {
+    return 0;
+  }
+  const values = remainder.map(numericValue);
+  switch (aggregate) {
+    case OthersAggregate.Count:
+    case 'count':
+      return remainder.length;
+    case OthersAggregate.Min:
+    case 'min':
+      return Math.min(...values);
+    case OthersAggregate.Max:
+    case 'max':
+      return Math.max(...values);
+    case OthersAggregate.Avg:
+    case 'avg':
+      return values.reduce((sum, v) => sum + v, 0) / values.length;
+    case OthersAggregate.Sum:
+    case 'sum':
+    default:
+      return values.reduce((sum, v) => sum + v, 0);
+  }
+}
+
+function createOthersRecord(remainder: ParsedSeriesRecord[], aggregate: OthersAggregate | string | undefined): ParsedSeriesRecord {
+  return {
+    name: OTHERS_NODE_NAME,
+    aliases: [OTHERS_NODE_NAME],
+    value: aggregateOthersValue(remainder, aggregate),
+  };
 }
 
 /**
  * Cap leaf records to effectiveMax (top-N by absolute value), then build the tree.
+ * Optionally fold the overflow into a single Others leaf.
  */
 export function processBubbleData(
   series: DataFrame[],
   options: Pick<
     BubbleChartOptions,
-    'stat' | 'unit' | 'groupBy' | 'groupLabels' | 'groupSeparator' | 'maxNodes'
+    | 'stat'
+    | 'unit'
+    | 'groupBy'
+    | 'groupLabels'
+    | 'groupSeparator'
+    | 'maxNodes'
+    | 'groupRemainderToOthers'
+    | 'othersAggregate'
   >
 ): ProcessedBubbleData {
   const requestedMax =
@@ -176,6 +229,7 @@ export function processBubbleData(
       ? options.maxNodes
       : DEFAULT_MAX_NODES;
   const effectiveMax = Math.min(requestedMax, HARD_MAX_NODES);
+  const groupToOthers = options.groupRemainderToOthers === true;
 
   // Refuse to process pathological query sizes — even soft-capping requires scanning all series.
   if (series.length > PARSE_REFUSE_THRESHOLD) {
@@ -185,6 +239,7 @@ export function processBubbleData(
       displayedLeafCount: 0,
       truncated: true,
       blocked: true,
+      othersCount: 0,
     };
   }
 
@@ -193,12 +248,22 @@ export function processBubbleData(
 
   let displayed = records;
   let truncated = false;
+  let othersCount = 0;
 
   if (totalLeafCount > effectiveMax) {
-    displayed = [...records]
-      .sort((a, b) => numericValue(b) - numericValue(a))
-      .slice(0, effectiveMax);
+    const sorted = [...records].sort((a, b) => absNumericValue(b) - absNumericValue(a));
     truncated = true;
+
+    if (groupToOthers) {
+      // Reserve one slot for the Others leaf when maxNodes > 1.
+      const keepCount = effectiveMax <= 1 ? 0 : effectiveMax - 1;
+      const kept = sorted.slice(0, keepCount);
+      const remainder = sorted.slice(keepCount);
+      othersCount = remainder.length;
+      displayed = [...kept, createOthersRecord(remainder, options.othersAggregate)];
+    } else {
+      displayed = sorted.slice(0, effectiveMax);
+    }
   }
 
   if (displayed.length > HARD_MAX_NODES) {
@@ -208,6 +273,7 @@ export function processBubbleData(
       displayedLeafCount: 0,
       truncated: true,
       blocked: true,
+      othersCount: 0,
     };
   }
 
@@ -219,5 +285,6 @@ export function processBubbleData(
     displayedLeafCount: displayed.length,
     truncated,
     blocked: false,
+    othersCount,
   };
 }

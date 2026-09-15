@@ -1,11 +1,12 @@
 import {FieldOverrideContext, FieldType, PanelPlugin, } from '@grafana/data';
-import {StatOptions, BubbleChartOptions, BubbleChartLabels} from './types';
+import {StatOptions, BubbleChartOptions, BubbleChartLabels, OthersAggregate} from './types';
 import {BubbleChartPanel} from 'components/BubbleChartPanel';
 import {FieldConfig} from '@grafana/schema';
 import './bubble-panel.css';
 import {ColorSchemeEditor} from 'components/ColorSchemeEditor';
 import {BubbleChartPanelMigrationHandler} from 'migrations';
 import {
+  DEFAULT_GROUP_REMAINDER_TO_OTHERS,
   DEFAULT_HIDE_LABELS_ABOVE,
   DEFAULT_MAX_NODES,
   DEFAULT_MIN_BUBBLE_RADIUS_FOR_LABEL,
@@ -162,6 +163,33 @@ export const plugin = new PanelPlugin < BubbleChartOptions, FieldConfig> (Bubble
           min: 1,
           max: HARD_MAX_NODES,
           integer: true,
+        },
+        category: ['Performance'],
+      })
+      .addBooleanSwitch({
+        path: 'groupRemainderToOthers',
+        name: 'Group remainder into Others',
+        description:
+          'When the query exceeds Max nodes, keep the largest bubbles and fold the rest into a single Others bubble instead of dropping them.',
+        defaultValue: DEFAULT_GROUP_REMAINDER_TO_OTHERS,
+        category: ['Performance'],
+      })
+      .addSelect({
+        path: 'othersAggregate',
+        name: 'Others aggregation',
+        description: 'How to compute the value of the Others bubble from the folded series.',
+        defaultValue: OthersAggregate.Sum,
+        settings: {
+          options: [
+            {value: OthersAggregate.Sum, label: 'Sum'},
+            {value: OthersAggregate.Avg, label: 'Average'},
+            {value: OthersAggregate.Min, label: 'Min'},
+            {value: OthersAggregate.Max, label: 'Max'},
+            {value: OthersAggregate.Count, label: 'Count'},
+          ],
+        },
+        showIf(currentOptions) {
+          return currentOptions.groupRemainderToOthers === true;
         },
         category: ['Performance'],
       })

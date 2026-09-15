@@ -3,7 +3,7 @@ import BubbleChart from './BubbleChart';
 import {BubbleChartOptions, ProcessedBubbleData} from 'types';
 import {LoadingState, PanelProps} from '@grafana/data';
 import {Alert} from '@grafana/ui';
-import {HARD_MAX_NODES, PARSE_REFUSE_THRESHOLD} from '../constants';
+import {HARD_MAX_NODES, OTHERS_NODE_NAME, PARSE_REFUSE_THRESHOLD} from '../constants';
 import {processBubbleData} from '../utils/processBubbleData';
 
 interface Props extends PanelProps<BubbleChartOptions> {}
@@ -17,6 +17,8 @@ export const BubbleChartPanel: React.FC<Props> = ({options, data, width, height}
     groupLabels,
     groupSeparator,
     maxNodes,
+    groupRemainderToOthers,
+    othersAggregate,
   } = options;
 
   const processed: ProcessedBubbleData | undefined = useMemo(() => {
@@ -30,8 +32,21 @@ export const BubbleChartPanel: React.FC<Props> = ({options, data, width, height}
       groupLabels,
       groupSeparator,
       maxNodes,
+      groupRemainderToOthers,
+      othersAggregate,
     });
-  }, [data.state, data.series, stat, unit, groupBy, groupLabels, groupSeparator, maxNodes]);
+  }, [
+    data.state,
+    data.series,
+    stat,
+    unit,
+    groupBy,
+    groupLabels,
+    groupSeparator,
+    maxNodes,
+    groupRemainderToOthers,
+    othersAggregate,
+  ]);
 
   if (processed === undefined) {
     return <>Loading... please wait</>;
@@ -53,8 +68,20 @@ export const BubbleChartPanel: React.FC<Props> = ({options, data, width, height}
     processed.truncated ? (
       <div style={{position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1, padding: 4}}>
         <Alert title="Showing partial data" severity="warning">
-          Showing {processed.displayedLeafCount.toLocaleString()} of {processed.totalLeafCount.toLocaleString()}{' '}
-          series (largest by value). Raise Max nodes under Performance options or filter the query.
+          {processed.othersCount > 0 ? (
+            <>
+              Showing {processed.displayedLeafCount.toLocaleString()} bubbles for{' '}
+              {processed.totalLeafCount.toLocaleString()} series; {processed.othersCount.toLocaleString()}{' '}
+              folded into &quot;{OTHERS_NODE_NAME}&quot;. Raise Max nodes under Performance options or filter
+              the query.
+            </>
+          ) : (
+            <>
+              Showing {processed.displayedLeafCount.toLocaleString()} of{' '}
+              {processed.totalLeafCount.toLocaleString()} series (largest by value). Raise Max nodes under
+              Performance options, enable Group remainder into Others, or filter the query.
+            </>
+          )}
         </Alert>
       </div>
     ) : null;
