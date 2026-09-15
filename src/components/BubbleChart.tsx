@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef} from 'react';
 import {BubbleChartLabels, BubbleChartProps, CircleData, TreeRecord} from 'types';
 import {Tooltip as ReactTooltip} from 'react-tooltip';
 import * as d3 from 'd3';
@@ -7,310 +7,394 @@ import {Selection} from 'd3-selection';
 import {} from 'd3-hierarchy';
 import * as chromatic from 'd3-scale-chromatic';
 import {config} from '@grafana/runtime';
+import {
+  DEFAULT_HIDE_LABELS_ABOVE,
+  DEFAULT_MIN_BUBBLE_RADIUS_FOR_LABEL,
+  RESIZE_DEBOUNCE_MS,
+} from '../constants';
 
-const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt}) => {
+type MergedOpt = {
+  textfont: string;
+  textanchor: string;
+  textshadow: string;
+  bubbleChartLabels: BubbleChartLabels[];
+  colorScheme: string;
+  thresholds: number[];
+  gradientThresholds: number[];
+  thresholdColors: string[];
+  gradientColors: string[];
+  groupDepthColors: string[];
+  colorLabel: string;
+  labelColorMappings: Array<{value: string; color: string}>;
+  unit: string;
+  decimals: number | undefined;
+  bgColor: string;
+  hideLabelsAbove: number;
+  minBubbleRadiusForLabel: number;
+};
+
+function parseThresholds(thresholds: string): number[] {
+  return thresholds.split(',').map((strValue: string) => Number(strValue.trim()));
+}
+
+function buildMergedOpt(opt: BubbleChartProps['opt']): MergedOpt {
+  const defaultFonts = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+  const defaultShadow = '0 1px 0 #fff, 1px 0 0 #fff, -1px 0 0 #fff, 0 -1px 0 #fff';
+  return {
+    textfont: opt.textfont?.trim() || defaultFonts,
+    textanchor: opt.textanchor?.trim() || 'middle',
+    textshadow: opt.textshadow?.trim() || defaultShadow,
+    bubbleChartLabels: opt.displayLabels || [],
+    colorScheme: opt.colorSchemeParams?.colorScheme?.trim() || 'Group',
+    thresholds: parseThresholds(opt.colorSchemeParams?.thresholds?.trim() || '50,80'),
+    gradientThresholds: parseThresholds(opt.colorSchemeParams?.gradientThresholds?.trim() || '0,100'),
+    thresholdColors:
+      (opt.colorSchemeParams?.thresholdColors ?? []).length > 0
+        ? (opt.colorSchemeParams?.thresholdColors as string[])
+        : ['rgba(237, 129, 40, 0.89)', 'rgba(50, 172, 45, 0.97)'],
+    gradientColors:
+      (opt.colorSchemeParams?.gradientColors ?? []).length > 0
+        ? (opt.colorSchemeParams?.gradientColors as string[])
+        : ['red', 'green'],
+    groupDepthColors:
+      (opt.colorSchemeParams?.groupDepthColors ?? []).length > 0
+        ? (opt.colorSchemeParams?.groupDepthColors as string[])
+        : ['hsl(152,80%,80%)', 'hsl(228,30%,40%)'],
+    colorLabel: opt.colorSchemeParams?.colorLabel?.trim() || '',
+    labelColorMappings: opt.colorSchemeParams?.labelColorMappings || [],
+    unit: opt.unit?.trim() || 'short',
+    decimals: opt.decimals,
+    bgColor: config.bootData.user.theme === GrafanaThemeType.Light ? 'rgb(230,230,230)' : 'rgb(38,38,38)',
+    hideLabelsAbove:
+      typeof opt.hideLabelsAbove === 'number' ? opt.hideLabelsAbove : DEFAULT_HIDE_LABELS_ABOVE,
+    minBubbleRadiusForLabel:
+      typeof opt.minBubbleRadiusForLabel === 'number'
+        ? opt.minBubbleRadiusForLabel
+        : DEFAULT_MIN_BUBBLE_RADIUS_FOR_LABEL,
+  };
+}
+
+/** Estimate font size from radius — avoids getComputedTextLength during animation. */
+function estimateFontSize(
+  d: d3.HierarchyCircularNode<TreeRecord>,
+  k: number,
+  root: d3.HierarchyCircularNode<TreeRecord>
+): number {
+  if (d === root) {
+    return Math.round(Math.max(0.5, d.children ? d.r / 4 : Math.min(2 * d.r, k * d.r / 4)));
+  }
+  return Math.round(Math.max(0.5, d.children ? d.r / 4 : (k * d.r) / 8));
+}
+
+const BubbleChart: React.FC<BubbleChartProps> = ({data, width, height, opt, nodeCount = 0}) => {
   const svgRef = useRef<SVGSVGElement>(null);
-  const [isOpen, setIsOpen] = useState(false);
+  const viewRef = useRef<d3.ZoomView | null>(null);
+  const focusRef = useRef<d3.HierarchyCircularNode<TreeRecord> | null>(null);
+  const layoutRef = useRef<{
+    root: d3.HierarchyCircularNode<TreeRecord>;
+    nodes: Array<d3.HierarchyCircularNode<TreeRecord>>;
+    circle: Selection<SVGCircleElement, d3.HierarchyCircularNode<TreeRecord>, SVGGElement, undefined> | null;
+    text: Selection<SVGTextElement, d3.HierarchyCircularNode<TreeRecord>, SVGGElement, undefined> | null;
+    node: Selection<d3.BaseType, unknown, SVGGElement, undefined> | null;
+    g: Selection<SVGGElement, unknown, null, undefined> | null;
+    margin: number;
+  } | null>(null);
 
+  const mergedOpt = useMemo(() => buildMergedOpt(opt), [opt]);
+
+  const labelsEnabled = useMemo(() => {
+    const hasLabelContent =
+      mergedOpt.bubbleChartLabels.includes(BubbleChartLabels.Name) ||
+      mergedOpt.bubbleChartLabels.includes(BubbleChartLabels.Value);
+    if (!hasLabelContent) {
+      return false;
+    }
+    if (mergedOpt.hideLabelsAbove > 0 && nodeCount > mergedOpt.hideLabelsAbove) {
+      return false;
+    }
+    return true;
+  }, [mergedOpt.bubbleChartLabels, mergedOpt.hideLabelsAbove, nodeCount]);
+
+  // Debounced size used so dragging the panel does not thrash pack/DOM.
+  const [debouncedSize, setDebouncedSize] = React.useState({width, height});
   useEffect(() => {
-    if(data.children?.length === 0) {
+    const handle = window.setTimeout(() => {
+      setDebouncedSize({width, height});
+    }, RESIZE_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [width, height]);
+
+  // Full rebuild when data or options change (or debounced size for pack diameter).
+  useEffect(() => {
+    if (data.children?.length === 0) {
       return;
     }
 
-    const renderData = () => {
-      const defaultFonts = '"Helvetica Neue", Helvetica, Arial, sans-serif';
-      const defaultShadow = '0 1px 0 #fff, 1px 0 0 #fff, -1px 0 0 #fff, 0 -1px 0 #fff';
-      const mergedOpt = {
-        textfont: opt.textfont?.trim() || defaultFonts,
-        textanchor: opt.textanchor?.trim() || 'middle',
-        textshadow: opt.textshadow?.trim() || defaultShadow,
-        bubbleChartLabels: opt.displayLabels || [],
+    const svgElement = svgRef.current;
+    if (!svgElement) {
+      return;
+    }
 
-        colorScheme: opt.colorSchemeParams?.colorScheme?.trim() || 'Group',
-        thresholds: parseThresholds(opt.colorSchemeParams?.thresholds?.trim() || '50,80'),
-        gradientThresholds: parseThresholds(opt.colorSchemeParams?.gradientThresholds?.trim() || '0,100'),
+    const {width: w, height: h} = debouncedSize;
+    const svgSelection = d3.select(svgElement);
+    svgSelection.selectAll('*').remove();
+    svgSelection.attr('width', w).attr('height', h).attr('viewBox', `0 0 ${w} ${h}`);
 
-        thresholdColors: (opt.colorSchemeParams?.thresholdColors ?? []).length > 0
-          ? opt.colorSchemeParams?.thresholdColors : ["rgba(237, 129, 40, 0.89)", "rgba(50, 172, 45, 0.97)"],
-        gradientColors: (opt.colorSchemeParams?.gradientColors ?? []).length > 0
-          ? opt.colorSchemeParams?.gradientColors : ['red', 'green'],
-        groupDepthColors: (opt.colorSchemeParams?.groupDepthColors ?? []).length > 0
-          ? opt.colorSchemeParams?.groupDepthColors : ["hsl(152,80%,80%)", "hsl(228,30%,40%)"],
-        colorLabel: opt.colorSchemeParams?.colorLabel?.trim() || '',
-        labelColorMappings: opt.colorSchemeParams?.labelColorMappings || [],
+    const bgColor = mergedOpt.bgColor;
+    const margin = 20;
+    const diameter = h;
+    const g = svgSelection.append('g').attr('transform', 'translate(' + w / 2 + ',' + h / 2 + ')');
 
-        unit: opt.unit?.trim() || 'short',
-        decimals: opt.decimals,
-        valueFormatFunc: formattedValueToString,
-        bgColor: config.bootData.user.theme === GrafanaThemeType.Light ? 'rgb(230,230,230)' : 'rgb(38,38,38)'
-      };
-      function parseThresholds(thresholds: string): number[] {
-        return thresholds.split(',').map((strValue: string) => Number(strValue.trim()));
+    const groupDepthColor = d3
+      .scaleLinear<string>()
+      .domain([-1, 5])
+      .range(mergedOpt.groupDepthColors as [string, string])
+      .interpolate(d3.interpolateHcl as any);
+
+    const gradientColor = d3
+      .scaleLinear<string>()
+      .domain(mergedOpt.gradientThresholds)
+      .range(mergedOpt.gradientColors as [string, string]);
+
+    const colorPalette = chromatic.schemeCategory10;
+    const uniqueColor = d3.scaleOrdinal().range(colorPalette);
+    const labelColor = d3.scaleOrdinal<string, string>().range(colorPalette);
+    const labelColorMap = new Map<string, string>(
+      (mergedOpt.labelColorMappings || [])
+        .filter((m) => m.value !== '')
+        .map((m) => [m.value, m.color])
+    );
+
+    const pack = d3
+      .pack()
+      .size([diameter - margin, diameter - margin])
+      .padding(2);
+
+    const root: d3.HierarchyCircularNode<TreeRecord> = d3
+      .hierarchy(data)
+      .sum((d: TreeRecord) => d.value || 1)
+      .sort(
+        (a: d3.HierarchyNode<TreeRecord>, b: d3.HierarchyNode<TreeRecord>) =>
+          (b.data.value || 1) - (a.data.value || 1)
+      ) as d3.HierarchyCircularNode<TreeRecord>;
+
+    const nodes = (pack(root as d3.HierarchyNode<unknown>) as d3.HierarchyCircularNode<TreeRecord>).descendants();
+
+    function getCircleColor(d: d3.HierarchyCircularNode<TreeRecord>): string {
+      const newVal = Number(d.data.value);
+      if (mergedOpt.colorScheme === 'Group') {
+        return String(groupDepthColor(d.depth));
+      } else if (mergedOpt.colorScheme === 'Threshold' && mergedOpt.thresholds.length > 0) {
+        if (d.children) {
+          return bgColor;
+        }
+        for (let i = mergedOpt.thresholds.length; i > 0; i--) {
+          if (newVal >= mergedOpt.thresholds[i - 1]) {
+            return mergedOpt.thresholdColors[i];
+          }
+        }
+        return mergedOpt.thresholdColors[0];
+      } else if (mergedOpt.colorScheme === 'Gradient') {
+        return d.children ? bgColor : String(gradientColor(Number(d.value)));
+      } else if (mergedOpt.colorScheme === 'Unique') {
+        return d.children ? bgColor : (uniqueColor(String(d.value)) as string);
+      } else if (mergedOpt.colorScheme === 'Label') {
+        if (d.children) {
+          return bgColor;
+        }
+        const labelKey = mergedOpt.colorLabel;
+        const labelValue =
+          labelKey && d.data.labels ? d.data.labels[labelKey] : d.data.name;
+        const key = labelValue ?? d.data.name ?? '';
+        if (labelColorMap.has(key)) {
+          return labelColorMap.get(key)!;
+        }
+        return labelColor(key);
       }
+      return 'green';
+    }
 
-      const svgElement = svgRef.current;
-      const svgSelection = d3.select(svgElement);
+    function formatValue(value: any): string {
+      let formattedValue = value.toString();
+      if (mergedOpt.unit?.length || mergedOpt.decimals != null) {
+        const fmt = getValueFormat(mergedOpt.unit ?? 'short');
+        if (!Number.isNaN(value)) {
+          formattedValue = formattedValueToString(fmt(value, mergedOpt.decimals));
+        }
+      }
+      return formattedValue;
+    }
 
-      // Reset the svg selection.
-      svgSelection.selectAll("*").remove();
+    function getTooltipText(d: d3.HierarchyCircularNode<TreeRecord>): string {
+      const toolTipCell =
+        '<div data-testid="series-icon" style="vertical-align: middle; background:' +
+        getCircleColor(d) +
+        ';width: 14px;height: 4px;border-radius: 9999px;display: inline-block;margin-right: 8px;"></div>';
+      return d === undefined
+        ? toolTipCell + ''
+        : toolTipCell +
+            '  <strong>' +
+            d.data.name +
+            (!d.children || d.children.length === 0
+              ? '</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' +
+                formatValue(d.data.value) +
+                '</span>'
+              : '</strong>');
+    }
 
-      const bgColor = mergedOpt.bgColor;
-      const margin = 20;
-      const diameter = + svgSelection.attr("height");
-      const g = svgSelection.append("g").attr("transform", "translate(" + width / 2 + "," + height / 2 + ")");
+    function getText(d: d3.HierarchyCircularNode<TreeRecord>): string {
+      let textContent = '';
+      const hasName = mergedOpt.bubbleChartLabels.includes(BubbleChartLabels.Name);
+      const hasValue = mergedOpt.bubbleChartLabels.includes(BubbleChartLabels.Value);
+      if (hasName) {
+        textContent += d.data.name;
+      }
+      if (hasName && hasValue) {
+        textContent += ':  ';
+      }
+      if (hasValue && d.data.value !== undefined) {
+        textContent += formatValue(d.data.value);
+      }
+      return textContent;
+    }
 
-      const groupDepthColor = d3.scaleLinear<string>()
-        .domain([-1, 5])
-        .range(mergedOpt.groupDepthColors)
-        .interpolate(d3.interpolateHcl as any);
+    function zoomTo(v: d3.ZoomView) {
+      const k = diameter / v[2];
+      viewRef.current = v;
+      const layout = layoutRef.current;
+      if (!layout?.node || !layout.circle) {
+        return;
+      }
+      layout.node.attr('transform', (d: any) =>
+        isNaN(d.x) ? 'translate(0,0)' : 'translate(' + (d.x - v[0]) * k + ',' + (d.y - v[1]) * k + ')'
+      );
+      layout.circle.attr('r', (d: any) => (isNaN(d.r) ? 0.5 : (d.r <= 0 ? 1 : d.r) * k));
 
-      const gradientColor = d3.scaleLinear<string>()
-        .domain(mergedOpt.gradientThresholds)
-        .range(mergedOpt.gradientColors);
+      if (layout.text) {
+        // No getComputedTextLength — estimate from radius and hide when too small.
+        layout.text
+          .style('font-size', (d: d3.HierarchyCircularNode<TreeRecord>) => estimateFontSize(d, k, root) + 'px')
+          .style('display', (d: d3.HierarchyCircularNode<TreeRecord>) => {
+            const fontPx = estimateFontSize(d, k, root);
+            const approxWidth = (d.data.name?.length || 1) * fontPx * 0.55;
+            const maxTextWidth = d.r * k * 2;
+            return approxWidth > maxTextWidth || d.r * k < mergedOpt.minBubbleRadiusForLabel
+              ? 'none'
+              : 'block';
+          });
+      }
+    }
 
-      const colorPalette = chromatic.schemeCategory10;
-      const uniqueColor = d3.scaleOrdinal().range(colorPalette);
-      const labelColor = d3.scaleOrdinal<string, string>().range(colorPalette);
-      const labelColorMap = new Map<string, string>(
-        (mergedOpt.labelColorMappings || [])
-          .filter((m: {value: string; color: string}) => m.value !== '')
-          .map((m: {value: string; color: string}) => [m.value, m.color])
+    function zoom(d: d3.HierarchyCircularNode<TreeRecord>, event: MouseEvent) {
+      focusRef.current = d;
+      const currentView = viewRef.current;
+      if (!currentView) {
+        return;
+      }
+      d3.transition<MouseEvent>()
+        .duration(event.altKey ? 7500 : 750)
+        .tween('zoom', function () {
+          const i = d3.interpolateZoom(currentView, [d.x, d.y, d.r * 2 + margin]);
+          return function (t) {
+            zoomTo(i(t));
+          };
+        });
+    }
+
+    function createCircles(
+      gSel: Selection<SVGGElement, unknown, null, undefined>,
+      nodeList: Array<d3.HierarchyCircularNode<TreeRecord>>
+    ) {
+      return gSel
+        .selectAll<SVGCircleElement, CircleData>('circle')
+        .data(nodeList)
+        .enter()
+        .append('circle')
+        .attr('class', (d) =>
+          d.parent ? (d.children ? 'node' : 'node node--leaf') : 'node node--root'
+        )
+        .style('fill', (d) => getCircleColor(d))
+        .attr('id', (d) => d.name)
+        .attr('r', (d) => (d.r && d.r > 0 ? d.r : 1))
+        .attr('data-tooltip-id', 'my-tooltip')
+        .on('click', (event: MouseEvent, d) => {
+          if (focusRef.current !== d) {
+            zoom(d, event);
+            event.stopPropagation();
+          }
+        })
+        .on('mouseover', function (_event: MouseEvent, d) {
+          // Lazy tooltip HTML — only compute on hover.
+          d3.select(this).attr('data-tooltip-html', getTooltipText(d));
+        });
+    }
+
+    function createTexts(
+      gSel: Selection<SVGGElement, unknown, null, undefined>,
+      nodeList: Array<d3.HierarchyCircularNode<TreeRecord>>
+    ) {
+      if (!labelsEnabled) {
+        return null;
+      }
+      // Only leaf nodes large enough to show a label — skip parents (opacity was 0) and tiny bubbles.
+      const labelNodes = nodeList.filter(
+        (d) =>
+          !d.children &&
+          d.r >= mergedOpt.minBubbleRadiusForLabel &&
+          getText(d).length > 0
       );
 
-      const pack = d3.pack()
-        .size([diameter - margin, diameter - margin])
-        .padding(2);
+      return gSel
+        .selectAll<SVGTextElement, CircleData>('text')
+        .data(labelNodes)
+        .enter()
+        .append('text')
+        .attr('font', mergedOpt.textfont)
+        .attr('text-anchor', mergedOpt.textanchor)
+        .attr('dy', '.35em')
+        .attr('text-anchor', 'middle')
+        .text((d) => getText(d))
+        .style('pointer-events', 'none')
+        .style('opacity', 1)
+        .style('font-size', (d) => estimateFontSize(d, 2, root) + 'px');
+    }
 
-      // Process the data to have a hierarchy structure;
-      const root: d3.HierarchyCircularNode<TreeRecord> = d3.hierarchy(data)
-        .sum((d: TreeRecord) => {
-          return d.value || 1;
-        })
-        .sort((a: d3.HierarchyNode<TreeRecord>, b: d3.HierarchyNode<TreeRecord>) => {
-          return (b.data.value || 1) - (a.data.value || 1);
-        })
-        .each((d: d3.HierarchyNode<TreeRecord>) => {
-          // if(d.data.name) {
-          //   d.label = d.data.name;
-          //   d.id = d.data.name.toLowerCase().replace(/ |\//g, "-");
-          // }
-        }) as d3.HierarchyCircularNode<TreeRecord>;;
+    const circle = createCircles(g, nodes);
+    const text = createTexts(g, nodes);
+    const node = g.selectAll('circle, text') as Selection<
+      d3.BaseType,
+      unknown,
+      SVGGElement,
+      undefined
+    >;
 
-      // Pass the data to the pack layout to calculate the distribution.
-      const nodes = (pack(root as d3.HierarchyNode<unknown>) as d3.HierarchyCircularNode<TreeRecord>).descendants();
-      let focus: any, view: d3.ZoomView;
-      const circle = createCircles(g, nodes);
-      const text = createTexts(g, nodes);
-
-      const node = g.selectAll("circle, text");
-      zoomTo([root.x, root.y, root.r * 2 + margin]);
-
-      function zoom(d: d3.HierarchyCircularNode<TreeRecord>, event: MouseEvent) {
-        focus = d;
-        d3.transition<MouseEvent>()
-          .duration(event.altKey ? 7500 : 750)
-          .tween("zoom", function(d) {
-            let i = d3.interpolateZoom(view, [focus.x, focus.y, focus.r * 2 + margin]);
-            return function(t) {
-              zoomTo(i(t));
-            };
-          });
-      };
-
-      function zoomTo(v: d3.ZoomView) {
-        let k = diameter / v[2];
-        view = v;
-        node?.attr("transform", (d: any) =>
-          isNaN(d.x) ? "translate(0,0)" :
-            "translate(" + (d.x - v[0]) * k + "," + (d.y - v[1]) * k + ")");
-        circle.attr("r", (d: any) => isNaN(d.r) ? 0.5 : ((d.r <= 0 ? 1 : d.r) * k));
-        text
-        .attr("dy", ".35em")
-        .style("font-size", function(d: d3.HierarchyCircularNode<TreeRecord>) {
-          const textElement = d3.select(this as SVGTextElement);
-          let computedTextLength: number = textElement.node()?.getComputedTextLength() ?? 0;
-          computedTextLength = getComputedTextFontSize(computedTextLength, d, k);
-          return computedTextLength + "px";
-        })
-        .style("display", function(d: d3.HierarchyCircularNode<TreeRecord>) {
-          const textElement = d3.select(this as SVGTextElement);
-          const computedTextLength: number = textElement.node()?.getComputedTextLength() ?? 0;
-          const maxTextWidth = d.r * k * 2; // Maximum allowed width within the circle
-
-          // Check if text width exceeds the available space
-          return computedTextLength > maxTextWidth ? "none" : "block";
-        })
-        ;
-      };
-
-      /**
-       * Returns the color for a circle based on the provided data.
-       * @param d - The data for the circle.
-       * @returns The color value for the circle.
-       */
-      function getCircleColor(d: d3.HierarchyCircularNode<TreeRecord>): string {
-        let newVal = Number(d.data.value);
-        if(mergedOpt.colorScheme === 'Group') {
-          return String(groupDepthColor(d.depth));
-        } else if(mergedOpt.colorScheme === 'Threshold' && mergedOpt.thresholds.length > 0) {
-          if(d.children) {
-            return bgColor;
-          } else {
-            for(let i = mergedOpt.thresholds.length;i > 0;i--) {
-              if(newVal >= mergedOpt.thresholds[i - 1]) {
-                return mergedOpt.thresholdColors[i];
-              }
-            }
-            return mergedOpt.thresholdColors[0];
-          }
-        } else if(mergedOpt.colorScheme === 'Gradient') {
-          return d.children ? bgColor : String(gradientColor(Number(d.value)));
-        } else if(mergedOpt.colorScheme === 'Unique') {
-          let color: string = d.children ? bgColor : uniqueColor(String(d.value)) as string;
-          return color;
-        } else if(mergedOpt.colorScheme === 'Label') {
-          if (d.children) {
-            return bgColor;
-          }
-          const labelKey = mergedOpt.colorLabel;
-          const labelValue = labelKey && d.data.labels
-            ? d.data.labels[labelKey]
-            : d.data.name;
-          const key = labelValue ?? d.data.name ?? '';
-          if (labelColorMap.has(key)) {
-            return labelColorMap.get(key)!;
-          }
-          return labelColor(key);
-        }
-        return 'green';
-      }
-
-      function getTooltipText(d: d3.HierarchyCircularNode<TreeRecord>): string {
-        let toolTipCell = '<div data-testid="series-icon" style="vertical-align: middle; background:' + getCircleColor(d) + ';width: 14px;height: 4px;border-radius: 9999px;display: inline-block;margin-right: 8px;"></div>';
-        const tooltipContent = d === undefined
-          ? toolTipCell + ''
-          : toolTipCell + '  <strong>' + d.data.name + (!d.children || d.children.length === 0 ? ('</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + formatValue(d.data.value) + '</span>') : ('</strong>'));
-
-        return tooltipContent;
-      }
-
-      /**
-       * Formats the given value based on the provided format function.
-       * @param value - The value to be formatted.
-       * @param opt - The options object.
-       * @returns The formatted value.
-       */
-      function formatValue(value: any): string {
-        let formattedValue = value.toString();
-        if(mergedOpt.unit?.length || mergedOpt.decimals != null) {
-          const fmt = getValueFormat(mergedOpt.unit ?? 'short');
-
-          if(!Number.isNaN(value)) {
-            formattedValue = formattedValueToString(fmt(value, mergedOpt.decimals));
-          }
-        }
-        return formattedValue;
-      }
-
-      // ...
-      function createCircles(g: Selection<SVGGElement, unknown, null, undefined>,
-        nodes: Array<d3.HierarchyCircularNode<TreeRecord>>):
-        Selection<SVGCircleElement, d3.HierarchyCircularNode<TreeRecord>, SVGGElement, undefined> {
-        const circle = g.selectAll<SVGCircleElement, CircleData>("circle")
-          .data(nodes)
-          .enter()
-          .append("circle")
-          .attr("class", (d: d3.HierarchyCircularNode<TreeRecord>) => d.parent ? (d.children ? "node" : "node node--leaf") : "node node--root")
-          .style("fill", (d: d3.HierarchyCircularNode<TreeRecord>) => getCircleColor(d))
-          .attr("id", (d: d3.HierarchyCircularNode<TreeRecord>) => d.name)
-          .attr("r", (d: d3.HierarchyCircularNode<TreeRecord>) => (d.r && d.r > 0 ? d.r : 1))
-          .attr('data-tooltip-id', "my-tooltip")
-          .attr('data-tooltip-html', (d) => getTooltipText(d))
-          .on("click", (event: MouseEvent, d: d3.HierarchyCircularNode<TreeRecord>) => {
-            if(focus !== d) {
-              zoom(d, event);
-              event.stopPropagation();
-            }
-          })
-          .on("mouseover", (event: MouseEvent, d: d3.HierarchyCircularNode<TreeRecord>) => {
-            setIsOpen(true);
-          })
-          .on("mouseout", (event: MouseEvent, d: d3.HierarchyCircularNode<TreeRecord>) => {
-            setIsOpen(false);
-          });
-        return circle;
-      }
-
-      function createTexts(g: Selection<SVGGElement, unknown, null, undefined>,
-        nodes: Array<d3.HierarchyCircularNode<TreeRecord>>):
-        Selection<SVGTextElement, d3.HierarchyCircularNode<TreeRecord>, SVGGElement, undefined> {
-        const text = g.selectAll<SVGTextElement, CircleData>("text")
-          .data(nodes)
-          .enter()
-          .append("text")
-          .attr("font", mergedOpt.textfont)
-          .attr("text-anchor", mergedOpt.textanchor)
-          .attr("dy", ".35em")
-          .attr("text-anchor", "middle")
-          .html((d: d3.HierarchyCircularNode<TreeRecord>) => getText(d))
-          .style("pointer-events", "none")
-          .style("opacity", (d: d3.HierarchyCircularNode<TreeRecord>) => d.children ? 0.0 : 1)
-          //.style("display", (d: d3.HierarchyCircularNode<TreeRecord>) => mergedOpt.displayLabel ? "inline" : "none")
-          .style("font-size", function(d: d3.HierarchyCircularNode<TreeRecord>) {
-            const textElement = d3.select(this as SVGTextElement);
-            let computedTextLength: number = textElement.node()?.getComputedTextLength() ?? 0;
-            computedTextLength = getComputedTextFontSize(computedTextLength, d, 2);
-            return computedTextLength + "px";
-          })
-          ;
-        return text;
-      }
-
-      function getText(d: d3.HierarchyCircularNode<TreeRecord>): string {
-        let textContent = "";
-
-        const hasName = mergedOpt.bubbleChartLabels.includes(BubbleChartLabels.Name);
-        const hasValue = mergedOpt.bubbleChartLabels.includes(BubbleChartLabels.Value);
-
-        if (hasName) {
-          textContent += d.data.name;
-        }
-        if (hasName && hasValue) {
-          textContent += ":  ";
-        }
-        if (hasValue && d.data.value !== undefined) {
-          textContent += formatValue(d.data.value);
-        }
-        // if (hasName) {
-        //     textContent += `<tspan>${d.data.name}</tspan>`;
-        // }
-        // if (hasName && hasValue) {
-        //     textContent += "<tspan dy='2em'></tspan>"; // Add a line break using dy attribute
-        // }
-        // if (hasValue && d.data.value !== undefined) {
-        //     textContent += `<tspan>${formatValue(d.data.value)}</tspan>`;
-        // }
-        return textContent;
-      }
-
-      function getComputedTextFontSize(textLength: any, d: d3.HierarchyCircularNode<TreeRecord>, k: number): number {
-        if(d === root) {
-          return Math.round(Math.max(0.5, d.children ? (d.r / 4) : (Math.min(2 * d.r, (2 * d.r - 8) / textLength * 10))));
-        } else {
-          return Math.round(Math.max(0.5,
-            (d.children ? (d.r / 4) : (k * d.r / 8))));
-        };
-      }
+    layoutRef.current = {
+      root,
+      nodes,
+      circle,
+      text,
+      node,
+      g,
+      margin,
     };
+    focusRef.current = root;
+    zoomTo([root.x, root.y, root.r * 2 + margin]);
 
-    renderData(); // Initial render
-  }, [opt, data, width, height]);
+    return () => {
+      layoutRef.current = null;
+    };
+  }, [data, mergedOpt, debouncedSize, labelsEnabled]);
 
   return (
     <div>
-      <svg ref={svgRef} width={width} height={height} viewBox={`0 0 ${width} ${height}`} id='BubbleChart'>
-      </svg>
-      <ReactTooltip id='my-tooltip' isOpen={isOpen} />
+      <svg
+        ref={svgRef}
+        width={debouncedSize.width}
+        height={debouncedSize.height}
+        viewBox={`0 0 ${debouncedSize.width} ${debouncedSize.height}`}
+        id="BubbleChart"
+      />
+      <ReactTooltip id="my-tooltip" />
     </div>
   );
 };

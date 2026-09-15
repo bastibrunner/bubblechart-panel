@@ -24,7 +24,22 @@ export interface BubbleChartOptions extends PanelProps, common.OptionsWithToolti
   textshadow: string;
   textfont: string;
   textanchor: string;
+  /** Soft cap on leaf bubbles rendered (effective max is min of this and HARD_MAX_NODES). */
+  maxNodes: number;
+  /** Hide all labels when total displayed node count exceeds this (0 = never auto-hide). */
+  hideLabelsAbove: number;
+  /** Minimum packed radius (before zoom scale) required to create a label text element. */
+  minBubbleRadiusForLabel: number;
 }
+
+/** Result of parsing series into a hierarchy, including truncation metadata. */
+export type ProcessedBubbleData = {
+  tree: TreeRecord;
+  totalLeafCount: number;
+  displayedLeafCount: number;
+  truncated: boolean;
+  blocked: boolean;
+};
 
 export type LabelColorMapping = {
   value: string;
@@ -49,6 +64,8 @@ export interface BubbleChartProps {
   width: number;
   height: number;
   opt: BubbleChartOptions;
+  /** Total nodes (descendants) after pack; used for LOD decisions. */
+  nodeCount?: number;
 }
 
 export type ParsedSeriesRecord = {

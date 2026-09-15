@@ -5,6 +5,12 @@ import {FieldConfig} from '@grafana/schema';
 import './bubble-panel.css';
 import {ColorSchemeEditor} from 'components/ColorSchemeEditor';
 import {BubbleChartPanelMigrationHandler} from 'migrations';
+import {
+  DEFAULT_HIDE_LABELS_ABOVE,
+  DEFAULT_MAX_NODES,
+  DEFAULT_MIN_BUBBLE_RADIUS_FOR_LABEL,
+  HARD_MAX_NODES,
+} from './constants';
 
 export const plugin = new PanelPlugin < BubbleChartOptions, FieldConfig> (BubbleChartPanel)
   .setMigrationHandler(BubbleChartPanelMigrationHandler)
@@ -116,6 +122,39 @@ export const plugin = new PanelPlugin < BubbleChartOptions, FieldConfig> (Bubble
         showIf(currentOptions, data) {
           return currentOptions.groupBy === "Name";
         },
+      })
+      .addNumberInput({
+        path: 'maxNodes',
+        name: 'Max nodes',
+        description: `Maximum leaf bubbles to render. Largest values are kept when the query returns more. Hard limit is ${HARD_MAX_NODES}.`,
+        defaultValue: DEFAULT_MAX_NODES,
+        settings: {
+          min: 1,
+          max: HARD_MAX_NODES,
+          integer: true,
+        },
+        category: ['Performance'],
+      })
+      .addNumberInput({
+        path: 'hideLabelsAbove',
+        name: 'Hide labels above',
+        description: 'Automatically hide all bubble labels when the displayed leaf count exceeds this value. Set to 0 to disable.',
+        defaultValue: DEFAULT_HIDE_LABELS_ABOVE,
+        settings: {
+          min: 0,
+          integer: true,
+        },
+        category: ['Performance'],
+      })
+      .addNumberInput({
+        path: 'minBubbleRadiusForLabel',
+        name: 'Min radius for labels',
+        description: 'Do not create label text for bubbles smaller than this packed radius (before zoom). Reduces DOM cost on dense charts.',
+        defaultValue: DEFAULT_MIN_BUBBLE_RADIUS_FOR_LABEL,
+        settings: {
+          min: 0,
+        },
+        category: ['Performance'],
       })
       .addCustomEditor({
         name: 'Color scheme',
